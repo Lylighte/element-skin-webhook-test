@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# 配置与密钥（含 signing_secret，切勿提交）
+receiver/config.json
+receiver/config.env
+*.env
+scripts/state/
+scripts/fixtures/
+
+# 数据
+receiver/*.db
+receiver/*.db-shm
+receiver/*.db-wal
+receiver/*.sqlite3
+report/raw/
+
+# 系统
+.DS_Store
+Thumbs.db

@@ -1,0 +1,24 @@
+{
+  "site_api_base": "http://127.0.0.1:8000",
+  "db_path": "receiver.db",
+  "worker_threads": 4,
+  "poll_interval_ms": 500,
+  "route_prefix": "/wh",
+  "endpoints": [
+    {
+      "name": "playerwall",
+      "path": "/webhooks/element-skin",
+      "signing_secret": "REPLACE_WITH_APP_A_SIGNING_SECRET"
+    },
+    {
+      "name": "probe",
+      "path": "/webhooks/probe",
+      "signing_secret": "REPLACE_WITH_APP_B_SIGNING_SECRET"
+    }
+  ],
+  "oauth": {
+    "client_id": "REPLACE_WITH_APP_A_CLIENT_ID",
+    "redirect_uri": "http://localhost:8080/callback",
+    "refresh_token": ""
+  }
+}

@@ -1,0 +1,22 @@
+# element-skin Webhook 接收端 systemd 单元
+# 复制到 /etc/systemd/system/element-skin-receiver.service
+[Unit]
+Description=Element Skin Webhook Receiver
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/element-skin-webhook-test
+# 配置从 /opt/element-skin-webhook-test/receiver/config.json 读取（模块目录）
+ExecStart=/opt/element-skin-webhook-test/receiver/.venv/bin/uvicorn receiver.app:app --host 127.0.0.1 --port 8080 --app-dir /opt/element-skin-webhook-test
+Restart=always
+RestartSec=3
+
+# 资源限制（2C2G 服务器）
+MemoryMax=512M
+CPUQuota=100%
+
+[Install]
+WantedBy=multi-user.target

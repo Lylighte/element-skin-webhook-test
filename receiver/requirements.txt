@@ -1,0 +1,12 @@
+# element-skin Webhook 接收端依赖
+# 安装：pip install -r requirements.txt
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.28
+# element-skin python-sdk 未发布到 PyPI，必须本地安装：
+#   pip install -e /opt/element-skin/python-sdk
+# （需先把 element-skin/python-sdk 目录同步到服务器）
+# element-skin-sdk>=0.1
+
+# 测试依赖
+pytest>=8.0
