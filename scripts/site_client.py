@@ -48,12 +48,18 @@ class SiteClient:
 
     def create_app(self, body: dict[str, Any]) -> dict[str, Any]:
         resp = self._client.post("/v2/oauth/apps", json=body)
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"create_app failed: {resp.status_code} {resp.text[:1000]}"
+            )
         return resp.json()
 
     def get_app(self, client_id: str) -> dict[str, Any]:
         resp = self._client.get(f"/v2/oauth/apps/{client_id}")
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"get_app failed: {resp.status_code} {resp.text[:1000]}"
+            )
         return resp.json()
 
     def update_app(self, client_id: str, body: dict[str, Any]) -> dict[str, Any]:
