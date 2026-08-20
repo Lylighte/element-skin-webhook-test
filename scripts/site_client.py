@@ -93,7 +93,10 @@ class SiteClient:
 
     def create_profile(self, name: str, model: str = "default") -> dict[str, Any]:
         resp = self._client.post("/v2/users/me/profiles", json={"name": name, "model": model})
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"create_profile failed: {resp.status_code} {resp.text[:500]}"
+            )
         return resp.json()
 
     def update_profile(self, profile_id: str, **fields: Any) -> None:
