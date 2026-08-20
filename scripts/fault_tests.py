@@ -67,6 +67,8 @@ def main() -> int:
     parser.add_argument("--hooks-base", required=True)
     parser.add_argument("--admin-email", required=True)
     parser.add_argument("--admin-password", required=True)
+    parser.add_argument("--user-email", required=True, help="测试用户（C1/C2 触发真实事件用）")
+    parser.add_argument("--user-password", required=True)
     parser.add_argument("--only", default=None, help="只运行指定用例，如 C1")
     args = parser.parse_args()
 
@@ -121,45 +123,46 @@ def main() -> int:
         assert resp.status_code == 400
         print("✓ C9 通过")
 
-    # C1：接收端 500 → 指数退避重试（验证首次重试约 30s 后到达）
+    # C1：接收端 500 → 指数退避重试（通过真实事件触发，worker 投递失败后重试）
     if args.only in (None, "C1"):
-        httpx.post(f"{hooks_base}/control/probe/500")
-        headers, body = build_request(secret_b, event_id="evt_c1_500", event_type="permission.updated",
-                                      data={"user_id": "user-c1"})
-        resp = httpx.post(url_b, content=body, headers=headers)
-        print(f"C1 触发 500: {resp.status_code}")
-        assert resp.status_code == 500
-        # 恢复后，等待重试（首约 30s）到达
-        httpx.post(f"{hooks_base}/control/probe/reset")
+        # 1. 接收端对 playerwall endpoint 设 500 故障
+        httpx.post(f"{hooks_base}/control/playerwall/500")
+        # 2. 触发真实事件：创建角色 → profile.created → worker 投递 → 500
+        with SiteClient(args.base) as user:
+            user.login(args.user_email, args.user_password)
+            profile = user.create_profile("FaultTestC1")
+            print(f"C1 创建角色触发事件: {profile.get('id')}")
+        # 3. 重置故障，等待 worker 重试（首约 30s）到达
+        httpx.post(f"{hooks_base}/control/playerwall/reset")
         print("C1 等待重试（约 30s）...")
         deadline = time.monotonic() + 45
         arrived = False
         while time.monotonic() < deadline:
             events = httpx.get(f"{hooks_base}/api/events").json().get("events", [])
-            if any(e["event_id"] == "evt_c1_500" and e["verified"] for e in events):
+            if any(e["event_type"] == "profile.created" and e["verified"] for e in events):
                 arrived = True
                 break
             time.sleep(2)
         assert arrived, "C1 重试未在 45s 内到达"
         print("✓ C1 通过（重试成功）")
 
-    # C2：接收端 >10s 不响应 → 超时重试
+    # C2：接收端 >10s 不响应 → 超时重试（通过真实事件触发）
     if args.only in (None, "C2"):
-        httpx.post(f"{hooks_base}/control/probe/slow")
-        headers, body = build_request(secret_b, event_id="evt_c2_slow", event_type="permission.updated",
-                                      data={"user_id": "user-c2"})
-        # slow 模式会 sleep 11s，worker 10s 超时；这里直接发请求会阻塞，用短超时
-        try:
-            httpx.post(url_b, content=body, headers=headers, timeout=3.0)
-        except httpx.TimeoutException:
-            print("C2 请求超时（预期，slow 模式）")
-        httpx.post(f"{hooks_base}/control/probe/reset")
+        # 1. 接收端对 playerwall endpoint 设 slow 故障（>10s 超时）
+        httpx.post(f"{hooks_base}/control/playerwall/slow")
+        # 2. 触发真实事件：创建角色 → worker 投递 → 超时
+        with SiteClient(args.base) as user:
+            user.login(args.user_email, args.user_password)
+            profile = user.create_profile("FaultTestC2")
+            print(f"C2 创建角色触发事件: {profile.get('id')}")
+        # 3. 重置故障，等待 worker 重试到达
+        httpx.post(f"{hooks_base}/control/playerwall/reset")
         print("C2 等待重试（约 30s）...")
         deadline = time.monotonic() + 45
         arrived = False
         while time.monotonic() < deadline:
             events = httpx.get(f"{hooks_base}/api/events").json().get("events", [])
-            if any(e["event_id"] == "evt_c2_slow" and e["verified"] for e in events):
+            if any(e["event_type"] == "profile.created" and e["verified"] for e in events):
                 arrived = True
                 break
             time.sleep(2)
@@ -210,6 +213,100 @@ def main() -> int:
                 print(f"C7 非法 URL {bad_url}: {resp.status_code}")
                 assert resp.status_code == 400
         print("✓ C7 通过")
+
+    # C8：endpoint 停用 → 不投递 → 恢复 → 投递
+    if args.only in (None, "C8"):
+        with SiteClient(args.base) as admin:
+            admin.login(args.admin_email, args.admin_password)
+            app_a = admin.get_app(state["app_a"]["client_id"])
+            endpoint_id = state["app_a"]["endpoint_id"]
+            if not endpoint_id:
+                # 从 get_app 响应中取 endpoint id
+                endpoint_id = app_a.get("webhook_endpoints", [{}])[0].get("id", "")
+            # 1. 停用 endpoint
+            disabled_body = {
+                "name": app_a["name"],
+                "client_type": app_a["client_type"],
+                "redirect_uri": app_a.get("redirect_uri", ""),
+                "permissions": app_a["permissions"],
+                "webhook_endpoints": [
+                    {
+                        "id": endpoint_id,
+                        "url": url_a,
+                        "enabled": False,
+                        "events": ["profile.created"],
+                    }
+                ],
+            }
+            resp = admin.request("PATCH", f"/v2/oauth/apps/{state['app_a']['client_id']}", json=disabled_body)
+            print(f"C8 停用 endpoint: {resp.status_code}")
+            assert resp.status_code == 200
+            # 2. 触发事件，确认不投递
+            with SiteClient(args.base) as user:
+                user.login(args.user_email, args.user_password)
+                user.create_profile("FaultTestC8Disabled")
+            time.sleep(3)
+            events = httpx.get(f"{hooks_base}/api/events").json().get("events", [])
+            disabled_arrived = any(e["event_type"] == "profile.created" and e["endpoint"] == "playerwall"
+                                   for e in events)
+            print(f"C8 停用期间事件是否到达: {disabled_arrived}")
+            assert not disabled_arrived, "C8 停用期间不应投递"
+            # 3. 恢复 endpoint
+            enabled_body = {
+                "name": app_a["name"],
+                "client_type": app_a["client_type"],
+                "redirect_uri": app_a.get("redirect_uri", ""),
+                "permissions": app_a["permissions"],
+                "webhook_endpoints": [
+                    {
+                        "id": endpoint_id,
+                        "url": url_a,
+                        "enabled": True,
+                        "events": ["profile.created"],
+                    }
+                ],
+            }
+            resp = admin.request("PATCH", f"/v2/oauth/apps/{state['app_a']['client_id']}", json=enabled_body)
+            print(f"C8 恢复 endpoint: {resp.status_code}")
+            assert resp.status_code == 200
+            # 4. 再触发事件，确认投递
+            with SiteClient(args.base) as user:
+                user.login(args.user_email, args.user_password)
+                user.create_profile("FaultTestC8Enabled")
+            deadline = time.monotonic() + 15
+            arrived = False
+            while time.monotonic() < deadline:
+                events = httpx.get(f"{hooks_base}/api/events").json().get("events", [])
+                # 恢复后应有新的 profile.created 到达（停用前 1 个 + 恢复后 1 个）
+                recent = [e for e in events if e["event_type"] == "profile.created" and e["endpoint"] == "playerwall"]
+                if len(recent) >= 2:
+                    arrived = True
+                    break
+                time.sleep(1)
+            assert arrived, "C8 恢复后事件未到达"
+            print("✓ C8 通过")
+        # 恢复应用 A 的完整事件订阅（C8 只保留了 profile.created）
+        with SiteClient(args.base) as admin:
+            admin.login(args.admin_email, args.admin_password)
+            app_a = admin.get_app(state["app_a"]["client_id"])
+            endpoint_id = app_a.get("webhook_endpoints", [{}])[0].get("id", "")
+            full_body = {
+                "name": app_a["name"],
+                "client_type": app_a["client_type"],
+                "redirect_uri": app_a.get("redirect_uri", ""),
+                "permissions": app_a["permissions"],
+                "webhook_endpoints": [
+                    {
+                        "id": endpoint_id,
+                        "url": url_a,
+                        "enabled": True,
+                        "events": ["profile.created", "profile.updated", "profile.deleted",
+                                   "texture.created", "texture.updated", "texture.deleted",
+                                   "oauth_grant.revoked"],
+                    }
+                ],
+            }
+            admin.request("PATCH", f"/v2/oauth/apps/{state['app_a']['client_id']}", json=full_body)
 
     print("可靠性/安全用例完成")
     return 0
