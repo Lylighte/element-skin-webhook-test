@@ -107,8 +107,13 @@ class SiteClient:
         resp = self._client.delete(f"/v2/users/me/profiles/{profile_id}")
         resp.raise_for_status()
 
-    def list_profiles(self) -> dict[str, Any]:
-        resp = self._client.get("/v2/users/me/profiles")
+    def list_profiles(self, *, cursor: str | None = None, limit: int | None = None) -> dict[str, Any]:
+        params = {}
+        if cursor:
+            params["cursor"] = cursor
+        if limit:
+            params["limit"] = str(limit)
+        resp = self._client.get("/v2/users/me/profiles", params=params)
         resp.raise_for_status()
         return resp.json()
 

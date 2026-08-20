@@ -56,17 +56,24 @@ def main() -> int:
         user.login(args.user_email, args.user_password)
 
         # 清理历史 PerfPlayer* 角色，避免角色名冲突（400）
+        # list_profiles 默认 limit=20，需分页遍历所有角色
         print("清理历史 PerfPlayer* 角色...")
-        profiles = user.list_profiles()
-        items = profiles.get("items", []) if isinstance(profiles, dict) else profiles
         cleaned = 0
-        for p in items:
-            if p.get("name", "").startswith("PerfPlayer"):
-                try:
-                    user.delete_profile(p["id"])
-                    cleaned += 1
-                except Exception as exc:
-                    print(f"删除角色 {p.get('name')} 失败: {exc}")
+        cursor = ""
+        while True:
+            profiles = user.list_profiles(cursor=cursor or None, limit=100)
+            items = profiles.get("items", []) if isinstance(profiles, dict) else profiles
+            for p in items:
+                if p.get("name", "").startswith("PerfPlayer"):
+                    try:
+                        user.delete_profile(p["id"])
+                        cleaned += 1
+                    except Exception as exc:
+                        print(f"删除角色 {p.get('name')} 失败: {exc}")
+            next_cursor = profiles.get("next_cursor", "") if isinstance(profiles, dict) else ""
+            if not next_cursor or not items:
+                break
+            cursor = next_cursor
         print(f"已清理 {cleaned} 个历史角色")
 
         # 场景 1+2：批量创建角色，测量端到端延迟与吞吐
