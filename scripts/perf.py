@@ -99,12 +99,16 @@ def main() -> int:
 
         # 等待接收端收到全部 profile.created 事件
         print("等待接收端收到事件...")
+        # 记录创建开始时间，只统计本次创建的事件（避免统计历史）
+        event_before = time.time_ns() // 1_000_000
         deadline = time.monotonic() + 120
         received = 0
         while time.monotonic() < deadline:
             try:
-                events = httpx.get(f"{hooks_base}/api/events", timeout=5.0).json().get("events", [])
-                received = sum(1 for e in events if e["event_type"] == "profile.created")
+                # /api/events 默认 limit=50，传大 limit 获取全部
+                events = httpx.get(f"{hooks_base}/api/events", params={"limit": 2000}, timeout=5.0).json().get("events", [])
+                received = sum(1 for e in events if e["event_type"] == "profile.created"
+                               and e["received_at_ms"] > event_before)
                 if received >= args.events:
                     break
             except httpx.HTTPError:
