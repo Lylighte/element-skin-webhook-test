@@ -106,8 +106,10 @@ def main() -> int:
     # 前置检查：C1/C2 需要用户对应用 A 有有效 grant（否则 profile.created 事件不产生）
     if args.only in (None, "C1", "C2"):
         grants = user.list_grants()
+        # ListGrants 返回 {"items": [...]}
+        grant_items = grants.get("items", []) if isinstance(grants, dict) else grants
         has_grant = any(g.get("client_id") == state["app_a"]["client_id"] and g.get("status") == "active"
-                        for g in grants)
+                        for g in grant_items)
         if not has_grant:
             print("错误：测试用户对应用 A 没有有效 grant。")
             print("请先运行 authorize_a.py 或网页授权应用 A（PlayerWall），再重试 C1/C2。")

@@ -106,9 +106,10 @@ def main() -> int:
             # 用例 6：oauth_grant.revoked（撤销用户对应用 A 的授权）
             if args.only in (None, "oauth_grant.revoked"):
                 grants = user.list_grants()
-                # ListGrants 返回数组（不是 {"grants": [...]}）
+                # ListGrants 返回 {"items": [...]}
+                grant_items = grants.get("items", []) if isinstance(grants, dict) else grants
                 target = next(
-                    (g for g in grants if g.get("client_id") == state["app_a"]["client_id"]),
+                    (g for g in grant_items if g.get("client_id") == state["app_a"]["client_id"]),
                     None,
                 )
                 if target:
