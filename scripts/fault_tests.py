@@ -103,6 +103,16 @@ def main() -> int:
     user = SiteClient(args.base)
     user.login(args.user_email, args.user_password)
 
+    # 前置检查：C1/C2 需要用户对应用 A 有有效 grant（否则 profile.created 事件不产生）
+    if args.only in (None, "C1", "C2"):
+        grants = user.list_grants()
+        has_grant = any(g.get("client_id") == state["app_a"]["client_id"] and g.get("status") == "active"
+                        for g in grants)
+        if not has_grant:
+            print("错误：测试用户对应用 A 没有有效 grant。")
+            print("请先运行 authorize_a.py 或网页授权应用 A（PlayerWall），再重试 C1/C2。")
+            return 1
+
     # C3：重放同 Webhook-Id → 204，inbox 无重复
     if args.only in (None, "C3"):
         # 每次运行用唯一 event_id，避免与历史数据冲突
