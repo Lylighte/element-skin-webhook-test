@@ -87,9 +87,10 @@ def main() -> int:
         second = httpx.post(url_a, content=body, headers=headers)
         print(f"C3 重放: first={first.status_code} second={second.status_code}")
         assert first.status_code == 204 and second.status_code == 204
-        status = httpx.get(f"{hooks_base}/admin/status").json()
-        total = sum(status["inbox"].values())
-        assert total == 1, f"inbox 应有 1 条，实际 {total}"
+        # 验证该 event_id 在事件日志中只出现一次（重放不产生重复）
+        events = httpx.get(f"{hooks_base}/api/events").json().get("events", [])
+        count = sum(1 for e in events if e["event_id"] == "evt_c3_replay")
+        assert count == 1, f"evt_c3_replay 应只出现 1 次，实际 {count}"
         print("✓ C3 通过")
 
     # C4：篡改 body / 伪造签名 / 过期时间戳 → 400
