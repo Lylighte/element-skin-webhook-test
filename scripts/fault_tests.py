@@ -168,7 +168,7 @@ def main() -> int:
         # 2. 触发真实事件：创建角色 → profile.created → worker 投递 → 500
         #    用唯一角色名，避免重复执行冲突
         before = time.time_ns() // 1_000_000
-        profile = user.create_profile(f"FaultC1_{uuid.uuid4().hex[:8]}")
+        profile = user.create_profile(f"C1_{uuid.uuid4().hex[:6]}")
         print(f"C1 创建角色触发事件: {profile.get('id')}")
         # 3. 重置故障，等待 worker 重试（首约 30s）到达
         httpx.post(f"{hooks_base}/control/playerwall/reset")
@@ -182,7 +182,7 @@ def main() -> int:
         httpx.post(f"{hooks_base}/control/playerwall/slow")
         # 2. 触发真实事件：创建角色 → worker 投递 → 超时
         before = time.time_ns() // 1_000_000
-        profile = user.create_profile(f"FaultC2_{uuid.uuid4().hex[:8]}")
+        profile = user.create_profile(f"C2_{uuid.uuid4().hex[:6]}")
         print(f"C2 创建角色触发事件: {profile.get('id')}")
         # 3. 重置故障，等待 worker 重试到达
         httpx.post(f"{hooks_base}/control/playerwall/reset")
@@ -257,8 +257,9 @@ def main() -> int:
         print(f"C8 停用 endpoint: {resp.status_code}")
         assert resp.status_code == 200
         # 2. 触发事件，确认不投递（复用 user 会话）
+        #    角色名限制 1-16 字符，用短名
         before = time.time_ns() // 1_000_000
-        user.create_profile(f"FaultC8Disabled_{uuid.uuid4().hex[:8]}")
+        user.create_profile(f"C8D_{uuid.uuid4().hex[:6]}")
         time.sleep(3)
         events = httpx.get(f"{hooks_base}/api/events").json().get("events", [])
         disabled_arrived = any(e["event_type"] == "profile.created" and e["endpoint"] == "playerwall"
@@ -285,7 +286,7 @@ def main() -> int:
         assert resp.status_code == 200
         # 4. 再触发事件，确认投递
         before = time.time_ns() // 1_000_000
-        user.create_profile(f"FaultC8Enabled_{uuid.uuid4().hex[:8]}")
+        user.create_profile(f"C8E_{uuid.uuid4().hex[:6]}")
         assert wait_for_new_event(hooks_base, "profile.created", "playerwall", before, timeout=15, interval=1), "C8 恢复后事件未到达"
         print("✓ C8 通过")
         # 5. 恢复应用 A 的完整事件订阅（C8 只保留了 profile.created）
