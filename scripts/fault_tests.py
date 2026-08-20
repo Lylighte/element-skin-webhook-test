@@ -238,78 +238,82 @@ def main() -> int:
         if not endpoint_id:
             # 从 get_app 响应中取 endpoint id
             endpoint_id = app_a.get("webhook_endpoints", [{}])[0].get("id", "")
-        # 1. 停用 endpoint
-        disabled_body = {
-            "name": app_a["name"],
-            "client_type": app_a["client_type"],
-            "redirect_uri": app_a.get("redirect_uri", ""),
-            "permissions": app_a["permissions"],
-            "webhook_endpoints": [
-                {
-                    "id": endpoint_id,
-                    "url": url_a,
-                    "enabled": False,
-                    "events": ["profile.created"],
-                }
-            ],
-        }
-        resp = admin.request("PATCH", f"/v2/oauth/apps/{state['app_a']['client_id']}", json=disabled_body)
-        print(f"C8 停用 endpoint: {resp.status_code}")
-        assert resp.status_code == 200
-        # 2. 触发事件，确认不投递（复用 user 会话）
-        #    角色名限制 1-16 字符，用短名
-        before = time.time_ns() // 1_000_000
-        user.create_profile(f"C8D_{uuid.uuid4().hex[:6]}")
-        time.sleep(3)
-        events = httpx.get(f"{hooks_base}/api/events").json().get("events", [])
-        disabled_arrived = any(e["event_type"] == "profile.created" and e["endpoint"] == "playerwall"
-                               and e["received_at_ms"] > before for e in events)
-        print(f"C8 停用期间事件是否到达: {disabled_arrived}")
-        assert not disabled_arrived, "C8 停用期间不应投递"
-        # 3. 恢复 endpoint
-        enabled_body = {
-            "name": app_a["name"],
-            "client_type": app_a["client_type"],
-            "redirect_uri": app_a.get("redirect_uri", ""),
-            "permissions": app_a["permissions"],
-            "webhook_endpoints": [
-                {
-                    "id": endpoint_id,
-                    "url": url_a,
-                    "enabled": True,
-                    "events": ["profile.created"],
-                }
-            ],
-        }
-        resp = admin.request("PATCH", f"/v2/oauth/apps/{state['app_a']['client_id']}", json=enabled_body)
-        print(f"C8 恢复 endpoint: {resp.status_code}")
-        assert resp.status_code == 200
-        # 4. 再触发事件，确认投递
-        before = time.time_ns() // 1_000_000
-        user.create_profile(f"C8E_{uuid.uuid4().hex[:6]}")
-        assert wait_for_new_event(hooks_base, "profile.created", "playerwall", before, timeout=15, interval=1), "C8 恢复后事件未到达"
-        print("✓ C8 通过")
-        # 5. 恢复应用 A 的完整事件订阅（C8 只保留了 profile.created）
-        app_a = admin.get_app(state["app_a"]["client_id"])
-        endpoint_id = app_a.get("webhook_endpoints", [{}])[0].get("id", "")
-        full_body = {
-            "name": app_a["name"],
-            "client_type": app_a["client_type"],
-            "redirect_uri": app_a.get("redirect_uri", ""),
-            "permissions": app_a["permissions"],
-            "webhook_endpoints": [
-                {
-                    "id": endpoint_id,
-                    "url": url_a,
-                    "enabled": True,
-                    "events": ["profile.created", "profile.updated", "profile.deleted",
-                               "texture.created", "texture.updated", "texture.deleted",
-                               "oauth_grant.revoked"],
-                }
-            ],
-        }
-        admin.request("PATCH", f"/v2/oauth/apps/{state['app_a']['client_id']}", json=full_body)
-        print("✓ C8 完整事件订阅已恢复")
+        # 记录原始事件订阅，用于 finally 恢复
+        original_events = app_a.get("webhook_endpoints", [{}])[0].get("events", [])
+        try:
+            # 1. 停用 endpoint
+            disabled_body = {
+                "name": app_a["name"],
+                "client_type": app_a["client_type"],
+                "redirect_uri": app_a.get("redirect_uri", ""),
+                "permissions": app_a["permissions"],
+                "webhook_endpoints": [
+                    {
+                        "id": endpoint_id,
+                        "url": url_a,
+                        "enabled": False,
+                        "events": ["profile.created"],
+                    }
+                ],
+            }
+            resp = admin.request("PATCH", f"/v2/oauth/apps/{state['app_a']['client_id']}", json=disabled_body)
+            print(f"C8 停用 endpoint: {resp.status_code}")
+            assert resp.status_code == 200
+            # 2. 触发事件，确认不投递（复用 user 会话）
+            #    角色名限制 1-16 字符，用短名
+            before = time.time_ns() // 1_000_000
+            user.create_profile(f"C8D_{uuid.uuid4().hex[:6]}")
+            time.sleep(3)
+            events = httpx.get(f"{hooks_base}/api/events").json().get("events", [])
+            disabled_arrived = any(e["event_type"] == "profile.created" and e["endpoint"] == "playerwall"
+                                   and e["received_at_ms"] > before for e in events)
+            print(f"C8 停用期间事件是否到达: {disabled_arrived}")
+            assert not disabled_arrived, "C8 停用期间不应投递"
+            # 3. 恢复 endpoint
+            enabled_body = {
+                "name": app_a["name"],
+                "client_type": app_a["client_type"],
+                "redirect_uri": app_a.get("redirect_uri", ""),
+                "permissions": app_a["permissions"],
+                "webhook_endpoints": [
+                    {
+                        "id": endpoint_id,
+                        "url": url_a,
+                        "enabled": True,
+                        "events": ["profile.created"],
+                    }
+                ],
+            }
+            resp = admin.request("PATCH", f"/v2/oauth/apps/{state['app_a']['client_id']}", json=enabled_body)
+            print(f"C8 恢复 endpoint: {resp.status_code}")
+            assert resp.status_code == 200
+            # 4. 再触发事件，确认投递
+            before = time.time_ns() // 1_000_000
+            user.create_profile(f"C8E_{uuid.uuid4().hex[:6]}")
+            assert wait_for_new_event(hooks_base, "profile.created", "playerwall", before, timeout=15, interval=1), "C8 恢复后事件未到达"
+            print("✓ C8 通过")
+        finally:
+            # 5. 无论成功失败，恢复应用 A 的完整事件订阅
+            app_a = admin.get_app(state["app_a"]["client_id"])
+            endpoint_id = app_a.get("webhook_endpoints", [{}])[0].get("id", "")
+            full_body = {
+                "name": app_a["name"],
+                "client_type": app_a["client_type"],
+                "redirect_uri": app_a.get("redirect_uri", ""),
+                "permissions": app_a["permissions"],
+                "webhook_endpoints": [
+                    {
+                        "id": endpoint_id,
+                        "url": url_a,
+                        "enabled": True,
+                        "events": original_events or ["profile.created", "profile.updated", "profile.deleted",
+                                                      "texture.created", "texture.updated", "texture.deleted",
+                                                      "oauth_grant.revoked"],
+                    }
+                ],
+            }
+            admin.request("PATCH", f"/v2/oauth/apps/{state['app_a']['client_id']}", json=full_body)
+            print("✓ C8 完整事件订阅已恢复")
 
     print("可靠性/安全用例完成")
     return 0
