@@ -18,7 +18,7 @@
   ],
   "oauth": {
     "client_id": "REPLACE_WITH_APP_A_CLIENT_ID",
-    "redirect_uri": "http://localhost:8080/callback",
+    "redirect_uri": "https://union-test.gpa.ac.cn/wh/callback",
     "refresh_token": ""
   }
 }

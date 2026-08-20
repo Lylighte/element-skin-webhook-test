@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 from element_skin_sdk import OAuthClient
+from element_skin_sdk.http import HTTPClient
 from element_skin_sdk.permissions import OAuthScopes, ProfileScopes, TextureScopes
 
 from site_client import SiteClient, load_json, save_json
@@ -37,14 +38,21 @@ def main() -> int:
     state = load_json(str(STATE_FILE))
     app_a = state["app_a"]
     client_id = app_a["client_id"]
-    redirect_uri = "http://localhost:8080/callback"
+    # redirect_uri 从 state 读取（与创建应用时一致），不硬编码
+    redirect_uri = app_a.get("redirect_uri", "")
 
     # 1. 用户登录
     with SiteClient(args.base) as site:
         site.login(args.user_email, args.user_password)
 
         # 2. 生成授权 URL
-        oauth = OAuthClient(args.base, client_id, redirect_uri=redirect_uri)
+        # 复用 SiteClient 的 httpx.Client（共享登录 cookie），使 /oauth/authorize 能识别已登录用户
+        oauth = OAuthClient(
+            args.base,
+            client_id,
+            redirect_uri=redirect_uri,
+            http_client=HTTPClient(args.base, client=site._client),
+        )
         session = oauth.authorization_url(
             [ProfileScopes.READ_OWNED, TextureScopes.READ_OWNED, OAuthScopes.GRANT_READ_OWNED],
             state="playerwall-test",

@@ -33,7 +33,7 @@ APP_A = {
     "name": "PlayerWall 皮肤墙",
     "description": "社区官网玩家皮肤墙：角色与皮肤实时展示，撤销授权即下架",
     "client_type": "public",
-    "redirect_uri": "http://localhost:8080/callback",
+    "redirect_uri": "https://union-test.gpa.ac.cn/wh/callback",
     "permissions": ["profile.read.owned", "texture.read.owned", "oauth_grant.read.owned"],
 }
 
@@ -106,20 +106,21 @@ def main() -> int:
         client.admin_review_app(app_b["client_id"], "active")
 
     # 提取一次性密钥
-    def extract(app: dict) -> dict:
+    def extract(app: dict, redirect_uri: str) -> dict:
         endpoint = app.get("webhook_endpoints", [{}])[0]
         return {
             "client_id": app["client_id"],
             "client_secret": app.get("client_secret", ""),
             "signing_secret": endpoint.get("signing_secret", ""),
             "endpoint_id": endpoint.get("id", ""),
+            "redirect_uri": redirect_uri,
         }
 
     state = {
         "base": args.base,
         "hooks_base": hooks_base,
-        "app_a": extract(app_a),
-        "app_b": extract(app_b),
+        "app_a": extract(app_a, APP_A["redirect_uri"]),
+        "app_b": extract(app_b, APP_B["redirect_uri"]),
     }
     save_json(str(STATE_FILE), state)
     print(f"应用已创建并激活，状态保存到 {STATE_FILE}")
